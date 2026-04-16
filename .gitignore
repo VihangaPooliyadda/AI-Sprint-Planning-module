@@ -1,24 +1,24 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.py[cod]
+# Large model files
+*.pkl
 
 # Large data files
+clean_priority.csv
 Datasets RAW/
-*.csv
-*.pkl
-*.json
 
-# VS Code
-.vscode/
+# Personal documents
+*.docx
+TAF/
+Proposal/
+final docs/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# JSON outputs
+replanning_log.json
+output_for_member3.json
 
 # Windows
-Thumbs.db
-Desktop.ini
 ~$*
-
-# Streamlit
-.streamlit/
+Thumbs.db

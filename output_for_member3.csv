@@ -1,0 +1,13 @@
+sprint_number,story_id,title,priority,story_points,estimated_hours,sprint_length_days,team_size
+1,US003,Update color scheme on dashboard page,HIGH,2,16,14,5
+1,US006,Fix broken email notifications,HIGH,3,24,14,5
+1,US002,Add export to PDF feature for reports,HIGH,5,40,14,5
+1,US001,Fix critical security vulnerability in login system,HIGH,8,64,14,5
+1,US010,Add two factor authentication for admin users,HIGH,8,64,14,5
+2,US004,Payment gateway crashes on checkout,HIGH,13,104,14,5
+2,US011,Critical bug causing data loss in production database,HIGH,13,104,14,5
+3,US011,Critical bug causing data loss in production database,HIGH,13,104,14,5
+3,US009,Update help documentation links,LOW,1,8,14,5
+3,US007,Add dark mode toggle to settings,LOW,3,24,14,5
+3,US005,Add search filter to user management,LOW,5,40,14,5
+3,US008,Database connection timeout under heavy load,LOW,8,64,14,5
