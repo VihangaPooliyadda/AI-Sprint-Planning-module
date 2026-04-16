@@ -1,0 +1,24 @@
+# Large model files
+*.pkl
+
+# Large data files
+clean_priority.csv
+Datasets RAW/
+
+# Personal documents
+*.docx
+TAF/
+Proposal/
+final docs/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# JSON outputs
+replanning_log.json
+output_for_member3.json
+
+# Windows
+~$*
+Thumbs.db
