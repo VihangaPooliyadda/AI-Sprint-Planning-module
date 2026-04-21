@@ -6,6 +6,14 @@ import numpy as np
 import json
 from datetime import datetime
 
+from database import (
+    save_stories, load_stories,
+    save_sprint_plan, load_sprint_plan,
+    log_change, load_change_history,
+    init_db
+)
+init_db()
+
 # ============================================================
 # PAGE CONFIG
 # ============================================================
@@ -196,6 +204,7 @@ elif page == "📝  Add User Stories":
                         "confidence":  confidence,
                     }
                     st.session_state.user_stories.append(story)
+                    save_stories(st.session_state.user_stories) 
                     icon = "🔴" if priority == "HIGH" else "🟢"
                     st.success(f"✅ Story {story_id} added! Priority: {icon} {priority} ({confidence}% confidence)")
                     st.rerun()
@@ -226,6 +235,7 @@ elif page == "📝  Add User Stories":
                 s["confidence"] = round(max(proba) * 100, 1)
             st.session_state.user_stories = samples
             st.session_state.sprint_plan  = {}
+            save_stories(st.session_state.user_stories)
             st.success("✅ 10 sample stories loaded with priority predictions!")
             st.rerun()
 
@@ -309,6 +319,7 @@ elif page == "🚀  Generate Sprint Plan":
                     sprints[current_sprint].append(story)
 
             st.session_state.sprint_plan = sprints
+            save_sprint_plan(sprints)
             st.success(f"✅ Sprint plan generated! {len(st.session_state.user_stories)} stories across {len(sprints)} sprints.")
 
         if st.session_state.sprint_plan:
@@ -405,7 +416,9 @@ elif page == "⚠️  Re-planning":
                     }
                     st.session_state.user_stories.append(new_story)
                     st.session_state.sprint_plan = {}
+                    log_change(change_type, story_id_change, reason=change_reason)
                     icon = "🔴" if priority == "HIGH" else "🟢"
+                    log_change("NEW_STORY_ADDED", story_id_change, new_value=priority, reason=change_reason)
                     st.success(f"✅ Story {story_id_change} added! Priority: {icon} {priority} ({confidence}%)")
                     st.info("🔄 Sprint plan cleared. Go to Generate Sprint Plan to re-allocate.")
 
@@ -416,7 +429,9 @@ elif page == "⚠️  Re-planning":
                     if s["story_id"] != story_id_change
                 ]
                 st.session_state.sprint_plan = {}
+                log_change(change_type, story_id_change, reason=change_reason)
                 if len(st.session_state.user_stories) < before:
+                    log_change("STORY_REMOVED", story_id_change, reason=change_reason)
                     st.success(f"✅ Story {story_id_change} removed successfully!")
                     st.info("🔄 Sprint plan cleared. Go to Generate Sprint Plan to re-allocate.")
                 else:
@@ -432,7 +447,9 @@ elif page == "⚠️  Re-planning":
                         found = True
                         break
                 st.session_state.sprint_plan = {}
+                log_change(change_type, story_id_change, reason=change_reason)
                 if found:
+                    log_change("STORY_MODIFIED", story_id_change, reason=change_reason)
                     st.success(f"✅ Story {story_id_change} updated successfully!")
                     st.info("🔄 Sprint plan cleared. Go to Generate Sprint Plan to re-allocate.")
                 else:
@@ -445,10 +462,12 @@ elif page == "⚠️  Re-planning":
                         old_priority = s["priority"]
                         s["priority"] = "HIGH" if urgency in ["CRITICAL", "HIGH"] else "LOW"
                         found = True
+                        log_change("PRIORITY_CHANGED", story_id_change, old_value=old_priority, new_value=s['priority'], reason=change_reason)
                         st.success(f"✅ Priority changed: {old_priority} → {s['priority']}")
                         st.info("🔄 Sprint plan cleared. Go to Generate Sprint Plan to re-allocate.")
                         break
                 st.session_state.sprint_plan = {}
+                log_change(change_type, story_id_change, reason=change_reason)
                 if not found:
                     st.warning(f"⚠️ Story {story_id_change} not found.")
 
