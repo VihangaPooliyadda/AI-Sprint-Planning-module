@@ -37,9 +37,39 @@ DB_PATH = os.path.join("/tmp", "sprint_planning.db")
 OUTPUT_JSON = os.path.join(BASE, "output_for_member3.json")
 MODEL_PKL   = os.path.join(BASE, "priority_model.pkl")
 TFIDF_PKL   = os.path.join(BASE, "priority_tfidf.pkl")
+EFFORT_PKL  = os.path.join(BASE, "effort_model.pkl")
+
+# ── Load ML models ────────────────────────────────────────
+# ── Download models if not present ───────────────────────
+def download_models():
+    try:
+        import gdown
+        if not os.path.exists(MODEL_PKL):
+            print("Downloading priority model...")
+            gdown.download(
+                f"https://drive.google.com/uc?id={os.environ.get('PRIORITY_MODEL_ID','')}",
+                MODEL_PKL, quiet=False
+            )
+        if not os.path.exists(TFIDF_PKL):
+            print("Downloading tfidf model...")
+            gdown.download(
+                f"https://drive.google.com/uc?id={os.environ.get('TFIDF_ID','')}",
+                TFIDF_PKL, quiet=False
+            )
+        if not os.path.exists(EFFORT_PKL):
+            print("Downloading effort model...")
+            gdown.download(
+                f"https://drive.google.com/uc?id={os.environ.get('EFFORT_MODEL_ID','')}",
+                EFFORT_PKL, quiet=False
+            )
+        return True
+    except Exception as e:
+        print(f"⚠️ Download failed: {e}")
+        return False
 
 # ── Load ML models ────────────────────────────────────────
 try:
+    download_models()
     with open(MODEL_PKL, "rb") as f:
         priority_model = pickle.load(f)
     with open(TFIDF_PKL, "rb") as f:
@@ -49,7 +79,6 @@ try:
 except Exception as e:
     MODELS_LOADED = False
     print(f"⚠️  ML models not loaded: {e}")
-
 # ═══════════════════════════════════════════════════════════
 # DATABASE HELPERS
 # ═══════════════════════════════════════════════════════════
