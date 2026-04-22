@@ -32,8 +32,8 @@ app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from Member 3's system
 
 # ── Paths ─────────────────────────────────────────────────
-BASE        = os.path.join("C:", os.sep, "Users", "lap.lk", "Desktop", "Research 4.1")
-DB_PATH     = os.path.join(BASE, "sprint_planning.db")
+BASE = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join("/tmp", "sprint_planning.db")
 OUTPUT_JSON = os.path.join(BASE, "output_for_member3.json")
 MODEL_PKL   = os.path.join(BASE, "priority_model.pkl")
 TFIDF_PKL   = os.path.join(BASE, "priority_tfidf.pkl")

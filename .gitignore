@@ -1,5 +1,6 @@
 # Large model files
 *.pkl
+*.db
 
 # Large data files
 clean_priority.csv
@@ -14,6 +15,8 @@ final docs/
 # Python cache
 __pycache__/
 *.pyc
+node_modules/
+.env
 
 # JSON outputs
 replanning_log.json
