@@ -727,6 +727,76 @@ def replan_full():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+@app.route("/api/upload-sprint-plan", methods=["POST"])
+def upload_sprint_plan():
+    """
+    Receives sprint plan data from local Streamlit app
+    and saves it to the server database and JSON file.
+    Called automatically when sprint plan is generated locally.
+    """
+    try:
+        data  = request.get_json()
+        tasks = data.get("tasks", [])
+
+        if not tasks:
+            return jsonify({
+                "status":  "error",
+                "message": "No tasks provided"
+            }), 400
+
+        # Save to database
+        conn = get_db()
+        conn.execute("DELETE FROM sprint_plans")
+        conn.execute("DELETE FROM user_stories")
+
+        for task in tasks:
+            # Save to sprint_plans
+            conn.execute("""
+                INSERT INTO sprint_plans
+                (sprint_number, story_id, title, priority,
+                 story_points, estimated_hours, sprint_length, team_size)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                task.get("sprint_number",   1),
+                task.get("story_id",        ""),
+                task.get("title",           ""),
+                task.get("priority",        "LOW"),
+                task.get("story_points",    0),
+                task.get("estimated_hours", 0),
+                task.get("sprint_length_days", 14),
+                task.get("team_size",       5),
+            ))
+
+            # Save to user_stories
+            conn.execute("""
+                INSERT OR REPLACE INTO user_stories
+                (story_id, title, description, story_points, priority, confidence)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                task.get("story_id",    ""),
+                task.get("title",       ""),
+                "",
+                task.get("story_points", 0),
+                task.get("priority",    "LOW"),
+                task.get("priority_confidence_pct", 0),
+            ))
+
+        conn.commit()
+        conn.close()
+
+        # Save output JSON
+        import json as json_module
+        with open(OUTPUT_JSON, "w") as f:
+            json_module.dump(tasks, f, indent=2)
+
+        return jsonify({
+            "status":      "success",
+            "message":     f"Sprint plan uploaded successfully",
+            "total_tasks": len(tasks),
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 if __name__ == "__main__":
     print("=" * 55)
     print("  Sprint Planning API — Member 2 (IT22134844)")
