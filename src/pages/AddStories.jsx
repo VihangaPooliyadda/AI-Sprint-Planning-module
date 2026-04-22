@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { predictPriority } from "../api";
+import { predictPriority, generateSprintPlan } from "../api";
 
 const SAMPLES = [
   { story_id:"US001", title:"Fix critical security vulnerability in login system",  description:"Users can bypass authentication using SQL injection attack on login form",          story_points:8  },
@@ -149,6 +149,31 @@ export default function AddStories() {
                 <h3 style={{ color:"var(--navy)", fontSize:"14px" }}>
                   Stories ({stories.length})
                 </h3>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    if (stories.length === 0) {
+                      showAlert("Please add stories first.", "error");
+                      return;
+                    }
+                    try {
+                      setLoading(true);
+                      const { data } = await generateSprintPlan(stories, {
+                        sprint_capacity: 30,
+                        sprint_length:   14,
+                        team_size:       5,
+                      });
+                      showAlert(`✅ Sprint plan generated! ${data.total_stories} stories across ${data.total_sprints} sprints. Go to Sprint Plan page to view.`);
+                    } catch {
+                      showAlert("Could not generate sprint plan. Make sure Railway API is running.", "error");
+                    }
+                    setLoading(false);
+                  }}
+                  disabled={loading}
+                  style={{ marginBottom: "10px", width: "100%" }}
+                >
+                  {loading ? "Generating…" : "🚀 Generate Sprint Plan on Server"}
+                </button>
                 <button className="btn btn-danger" onClick={clearAll}
                   style={{ padding:"6px 12px", fontSize:"12px" }}>
                   🗑 Clear All
