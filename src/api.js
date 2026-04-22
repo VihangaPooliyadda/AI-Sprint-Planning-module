@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "http://localhost:5000" });
+const api = axios.create({ baseURL: "https://your-railway-url.up.railway.app" });
 
 export const healthCheck     = ()     => api.get("/api/health");
 export const getSprintPlan   = ()     => api.get("/api/sprint-plan");
