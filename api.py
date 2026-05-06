@@ -425,4 +425,276 @@ def trigger_replan():
         conn.execute("""
             INSERT INTO change_logs (change_type, story_id, old_value, new_value, reason)
             VALUES (?, ?, ?, ?, ?)
-        """, (change_type, story_id
+        """, (change_type, story_id, old_value, new_value, reason))
+        conn.commit()
+        conn.close()
+        tasks = load_sprint_data()
+        return jsonify({
+            "status":  "success",
+            "message": "Change logged. Please regenerate the sprint plan.",
+            "change_logged": {
+                "change_type": change_type,
+                "story_id":    story_id,
+                "reason":      reason,
+                "logged_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            },
+            "current_sprint_plan_task_count": len(tasks)
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/replan-full", methods=["POST"])
+def replan_full():
+    data = request.get_json()
+    if not data or "change_type" not in data:
+        return jsonify({"status": "error", "message": "change_type required"}), 400
+
+    change_type  = data.get("change_type",  "")
+    story_id     = data.get("story_id",     "")
+    title        = data.get("title",        "")
+    description  = data.get("description",  "")
+    story_points = int(data.get("story_points", 5))
+    reason       = data.get("reason",       "")
+    urgency      = data.get("urgency",      "MEDIUM")
+
+    try:
+        init_db()
+        conn    = get_db()
+        rows    = conn.execute("SELECT * FROM user_stories").fetchall()
+        stories = [dict(r) for r in rows]
+        conn.close()
+
+        if change_type == "NEW_STORY_ADDED":
+            existing_ids = [s["story_id"] for s in stories]
+            if story_id in existing_ids:
+                return jsonify({
+                    "status":  "error",
+                    "message": f"Story {story_id} already exists."
+                }), 400
+            if MODELS_LOADED:
+                full_text  = title + " " + description
+                features   = tfidf.transform([full_text])
+                pred       = priority_model.predict(features)[0]
+                proba      = priority_model.predict_proba(features)[0]
+                priority   = "HIGH" if pred == 1 else "LOW"
+                confidence = round(float(max(proba)) * 100, 1)
+            else:
+                priority   = "HIGH" if urgency in ["CRITICAL","HIGH"] else "LOW"
+                confidence = 75.0
+            stories.append({
+                "story_id":    story_id,
+                "title":       title,
+                "description": description,
+                "story_points":story_points,
+                "priority":    priority,
+                "confidence":  confidence,
+            })
+
+        elif change_type == "STORY_REMOVED":
+            stories = [s for s in stories if s["story_id"] != story_id]
+
+        elif change_type == "STORY_MODIFIED":
+            for s in stories:
+                if s["story_id"] == story_id:
+                    s["story_points"] = story_points
+                    if title:
+                        s["title"] = title
+                    break
+
+        elif change_type == "PRIORITY_CHANGED":
+            for s in stories:
+                if s["story_id"] == story_id:
+                    s["priority"] = "HIGH" if urgency in ["CRITICAL","HIGH"] else "LOW"
+                    break
+
+        conn = get_db()
+        conn.execute("DELETE FROM user_stories")
+        for s in stories:
+            conn.execute("""
+                INSERT OR REPLACE INTO user_stories
+                (story_id, title, description, story_points, priority, confidence)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (s["story_id"], s["title"], s.get("description",""),
+                  s["story_points"], s["priority"], s.get("confidence", 0)))
+        conn.commit()
+        conn.close()
+
+        def sort_key(x):
+            if x["story_id"] == story_id and urgency == "CRITICAL":
+                return (0, 0, x["story_points"])
+            if x["priority"] == "HIGH":
+                return (0, 1, x["story_points"])
+            return (1, 1, x["story_points"])
+
+        sprints = run_greedy_bin_packing(sorted(stories, key=sort_key), 30)
+
+        conn = get_db()
+        conn.execute("DELETE FROM sprint_plans")
+        for sprint_num, sprint_stories in sprints.items():
+            for s in sprint_stories:
+                conn.execute("""
+                    INSERT INTO sprint_plans
+                    (sprint_number, story_id, title, priority,
+                     story_points, estimated_hours, sprint_length, team_size)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (sprint_num, s["story_id"], s["title"], s["priority"],
+                      s["story_points"], s["story_points"] * 8, 14, 5))
+        conn.execute("""
+            INSERT INTO change_logs (change_type, story_id, old_value, new_value, reason)
+            VALUES (?, ?, ?, ?, ?)
+        """, (change_type, story_id, "", title, reason))
+        conn.commit()
+        conn.close()
+
+        output_tasks = []
+        for sprint_num, sprint_stories in sprints.items():
+            for s in sprint_stories:
+                output_tasks.append({
+                    "story_id":                s["story_id"],
+                    "title":                   s["title"],
+                    "sprint_number":           sprint_num,
+                    "priority":                s["priority"],
+                    "priority_confidence_pct": s.get("confidence", 0),
+                    "story_points":            s["story_points"],
+                    "estimated_hours":         s["story_points"] * 8,
+                    "sprint_length_days":      14,
+                    "team_size":               5,
+                })
+        with open(OUTPUT_JSON, "w") as f:
+            json.dump(output_tasks, f, indent=2)
+
+        total_sprints = max(sprints.keys()) if sprints else 0
+
+        return jsonify({
+            "status":        "success",
+            "message":       "Change applied and sprint plan regenerated.",
+            "change_type":   change_type,
+            "story_id":      story_id,
+            "total_tasks":   len(stories),
+            "total_sprints": total_sprints,
+            "tasks": [{
+                "task_id":                 s["story_id"],
+                "title":                   s["title"],
+                "sprint_number":           n,
+                "priority":                s["priority"],
+                "priority_confidence_pct": s.get("confidence", 0),
+                "story_points":            s["story_points"],
+                "complexity":              complexity_label(s["story_points"]),
+                "estimated_hours":         s["story_points"] * 8,
+                "sprint_length_days":      14,
+                "team_size":               5,
+            } for n, ss in sprints.items() for s in ss]
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/upload-sprint-plan", methods=["POST"])
+def upload_sprint_plan():
+    try:
+        init_db()
+        data  = request.get_json()
+        tasks = data.get("tasks", [])
+
+        if not tasks:
+            return jsonify({"status": "error", "message": "No tasks provided"}), 400
+
+        conn = get_db()
+        conn.execute("DELETE FROM sprint_plans")
+        conn.execute("DELETE FROM user_stories")
+
+        for task in tasks:
+            conn.execute("""
+                INSERT INTO sprint_plans
+                (sprint_number, story_id, title, priority,
+                 story_points, estimated_hours, sprint_length, team_size)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                task.get("sprint_number",      1),
+                task.get("story_id",           ""),
+                task.get("title",              ""),
+                task.get("priority",           "LOW"),
+                task.get("story_points",        0),
+                task.get("estimated_hours",     0),
+                task.get("sprint_length_days", 14),
+                task.get("team_size",           5),
+            ))
+            conn.execute("""
+                INSERT OR REPLACE INTO user_stories
+                (story_id, title, description, story_points, priority, confidence)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                task.get("story_id",               ""),
+                task.get("title",                  ""),
+                "",
+                task.get("story_points",            0),
+                task.get("priority",               "LOW"),
+                task.get("priority_confidence_pct", 0),
+            ))
+        conn.commit()
+        conn.close()
+
+        with open(OUTPUT_JSON, "w") as f:
+            json.dump(tasks, f, indent=2)
+
+        return jsonify({
+            "status":      "success",
+            "message":     "Sprint plan uploaded successfully",
+            "total_tasks": len(tasks),
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({
+        "status":  "error",
+        "message": "Endpoint not found.",
+        "available_endpoints": [
+            "GET  /api/health",
+            "GET  /api/sprint-plan",
+            "GET  /api/sprint-plan/<sprint_number>",
+            "GET  /api/stories",
+            "POST /api/sprint-plan",
+            "POST /api/predict-priority",
+            "POST /api/replan",
+            "POST /api/replan-full",
+            "POST /api/upload-sprint-plan",
+        ]
+    }), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({
+        "status":  "error",
+        "message": "Internal server error.",
+        "detail":  str(e)
+    }), 500
+
+
+if __name__ == "__main__":
+    print("=" * 55)
+    print("  Sprint Planning API — Member 2 (IT22134844)")
+    print("=" * 55)
+    init_db()
+    print("✅ Database initialised")
+    print("🚀 Starting API on http://localhost:8080")
+    print()
+    print("  Available endpoints:")
+    print("  GET  http://localhost:8080/api/health")
+    print("  GET  http://localhost:8080/api/sprint-plan")
+    print("  GET  http://localhost:8080/api/sprint-plan/1")
+    print("  GET  http://localhost:8080/api/stories")
+    print("  POST http://localhost:8080/api/sprint-plan")
+    print("  POST http://localhost:8080/api/predict-priority")
+    print("  POST http://localhost:8080/api/replan")
+    print("  POST http://localhost:8080/api/replan-full")
+    print("  POST http://localhost:8080/api/upload-sprint-plan")
+    print("=" * 55)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(debug=False, host="0.0.0.0", port=port)
