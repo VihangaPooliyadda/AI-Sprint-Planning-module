@@ -141,6 +141,21 @@ def complexity_label(points):
     elif points <= 8: return "HIGH"
     else:             return "VERY HIGH"
 
+
+def sprint_priority_score(story_points, priority, confidence, sprint_number):
+    """
+    Sprint Priority Score (0-100)
+    Combines priority, ML confidence, effort and urgency
+    into a single ranking score for Member 3.
+    Higher score = allocate resources first.
+    """
+    base         = 60 if priority == "HIGH" else 30
+    conf_score   = (confidence / 100) * 20
+    effort_score = min((story_points / 13) * 10, 10)
+    urgency      = max(10 - (sprint_number - 1) * 3, 0)
+    return round(min(base + conf_score + effort_score + urgency, 100), 1)
+
+
 def load_sprint_data():
     if os.path.exists(OUTPUT_JSON):
         try:
@@ -156,6 +171,12 @@ def load_sprint_data():
                         "priority_confidence_pct":float(row.get("priority_confidence_pct", 0)),
                         "story_points":           int(row.get("story_points", 0)),
                         "complexity":             complexity_label(int(row.get("story_points", 0))),
+                        "sprint_priority_score":  sprint_priority_score(
+                            int(row.get("story_points", 0)),
+                            str(row.get("priority", "LOW")),
+                            float(row.get("priority_confidence_pct", 0)),
+                            int(row.get("sprint_number", 1))
+                        ),
                         "estimated_hours":        int(row.get("estimated_hours", 0)),
                         "sprint_length_days":     int(row.get("sprint_length_days", 14)),
                         "team_size":              int(row.get("team_size", 5)),
@@ -181,6 +202,12 @@ def load_sprint_data():
                 "priority_confidence_pct":0.0,
                 "story_points":           int(row.get("story_points", 0)),
                 "complexity":             complexity_label(int(row.get("story_points", 0))),
+                "sprint_priority_score":  sprint_priority_score(
+                    int(row.get("story_points", 0)),
+                    str(row.get("priority", "LOW")),
+                    0.0,
+                    int(row.get("sprint_number", 1))
+                ),
                 "estimated_hours":        int(row.get("estimated_hours", 0)),
                 "sprint_length_days":     int(row.get("sprint_length", 14)),
                 "team_size":              int(row.get("team_size", 5)),
@@ -332,6 +359,12 @@ def post_sprint_plan():
                 "priority_confidence_pct": s.get("confidence",0),
                 "story_points":            s.get("story_points",0),
                 "complexity":              complexity_label(s.get("story_points",0)),
+                "sprint_priority_score":   sprint_priority_score(
+                    s.get("story_points",0),
+                    s.get("priority","LOW"),
+                    s.get("confidence",0),
+                    n
+                ),
                 "estimated_hours":         s.get("story_points",0)*8,
                 "sprint_length_days":      sprint_length,
                 "team_size":               team_size,
@@ -380,6 +413,29 @@ def get_stories():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/predict-priority", methods=["POST"])
+def preprocess_story_text(title, description=""):
+    """
+    Preprocess user story text before prediction.
+    Handles both GitHub issue format and user story format.
+    """
+    text = (title + " " + description).lower()
+
+    # Extract feature from user story format
+    if "i want to" in text:
+        feature_start = text.index("i want to") + len("i want to")
+        text = text[feature_start:]
+    elif "i want" in text:
+        feature_start = text.index("i want") + len("i want")
+        text = text[feature_start:]
+
+    # Remove role prefix if present
+    for prefix in ["as a ", "as an "]:
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+
+    return text.strip()
+
+
 def predict_priority():
     if not MODELS_LOADED:
         return jsonify({"status": "error", "message": "ML models not loaded."}), 503
@@ -388,7 +444,7 @@ def predict_priority():
         return jsonify({"status": "error", "message": "Please provide a title field."}), 400
     title       = str(data.get("title", ""))
     description = str(data.get("description", ""))
-    full_text   = title + " " + description
+    full_text = preprocess_story_text(title, description)
     try:
         features   = tfidf.transform([full_text])
         pred       = priority_model.predict(features)[0]
@@ -581,6 +637,12 @@ def replan_full():
                 "priority_confidence_pct": s.get("confidence", 0),
                 "story_points":            s["story_points"],
                 "complexity":              complexity_label(s["story_points"]),
+                "sprint_priority_score":   sprint_priority_score(
+                    s["story_points"],
+                    s["priority"],
+                    s.get("confidence", 0),
+                    n
+                ),
                 "estimated_hours":         s["story_points"] * 8,
                 "sprint_length_days":      14,
                 "team_size":               5,
